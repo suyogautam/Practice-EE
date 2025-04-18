@@ -1,3 +1,5 @@
-streamlit>=1.22.0
+streamlit
 earthengine-api
 geemap
+google-auth
+setuptools
