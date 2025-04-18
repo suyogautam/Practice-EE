@@ -1,34 +1,29 @@
-Lilly Rush
-Graden Shoemaker
-Will Prokopik
-Collin Stevens, Logan McKay, John Porter, Matthew McGoldrick
-Arwen Downum, Becky Schlesinger, Blake Olsen,
-Hannah Tupaczewski, Savanna Perham, Daniel Woods
-Meg Teasdale, Mary-Kate Easter, Georgia Smith, 
-Jess Boalick, Faith Hemmerdinger, Xavier Burns, Caroline Metheny
-Talia Meeks, Tara Blue, Sithuni Mimasha, Krishna Choudhury
+import streamlit as st
+import geemap
+import ee
+import json
 
-Tim Epperly
-Brenna Demko
-Amanda King
-Erica Liller
-Madeline Trull
-Emma McPhatter, Grace Miller, Reid Pestana, Becky Schlesinger, Maddi William
-Thomas Johnson, Pardis Akbari, Maryam Karami
-Hunter Dunn, Ryan Morel, William Christian,
-Olivia Backer
-Ryan Dillon, Cyrus Wilson, Drew Zacharias, Marwa Al
+# Set page configuration
+st.set_page_config(page_title="GEE Test", layout="centered")
 
+st.title("🌍 Google Earth Engine Initialization Test")
 
+@st.cache_resource
+def initialize_earth_engine():
+    try:
+        # Load service account credentials from Streamlit secrets
+        service_account = st.secrets["GEE_SERVICE_ACCOUNT"]
+        key_json = json.loads(st.secrets["GEE_SERVICE_KEY"])
 
-Ally Lambiase, Chloe Hurren, Rachel Wilson
-Area conversion to sq. miles is not accurate. I think you might have converted meters to miles instead of sq. meters to sq. miles. (length instead of area)
+        credentials = ee.ServiceAccountCredentials(service_account, key_data=key_json)
+        ee.Initialize(credentials)
 
+        return "✅ Earth Engine initialized successfully!"
+    except Exception as e:
+        return f"❌ Earth Engine initialization failed: {e}"
 
+# Initialize EE and display the result
+with st.spinner("Initializing Google Earth Engine..."):
+    result = initialize_earth_engine()
 
-
-Ella Aussey, Kieran Sweeney, Max Hartelius, Kieran Precit
-
-Number of pixel is not accurate for area conversion. Its the value of 'histogram' column of attribute table.
-
-Also area conversion to sq. miles is not accurate. 
+st.success(result) if result.startswith("✅") else st.error(result)
