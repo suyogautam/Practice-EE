@@ -5,12 +5,11 @@ import os
 
 st.title("Google Earth Engine Authentication Test")
 
-# Path to your credentials file
+# Corrected path to your credentials file
 credentials_path = r"C:\Users\suyog\.config\earthengine\credentials"
 
 try:
     # Initialize Earth Engine using the default credentials
-    # This should automatically look for credentials in the default location
     ee.Initialize()
     st.success("✅ Authentication successful! You are connected to Google Earth Engine.")
     
@@ -50,3 +49,4 @@ except Exception as e:
         st.info(f"✓ Credentials file exists at {credentials_path}")
     else:
         st.error(f"✗ Credentials file not found at {credentials_path}")
+        st.info("Please run 'earthengine authenticate' in your command line.")
