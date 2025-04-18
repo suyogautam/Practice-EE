@@ -2,15 +2,20 @@ import streamlit as st
 import geemap
 import geopandas as gpd
 import pandas as pd
+import zipfile
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import io
+import ee
+import json
 import time
 import requests
 import tempfile
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+import geemap.foliumap as geemap_folium
 
 # Set page configuration
 st.set_page_config(
@@ -32,7 +37,7 @@ areas and natural/vegetative surfaces over time.
 def initialize_ee():
     try:
         # This will use the EARTHENGINE_TOKEN from Streamlit secrets
-        geemap.ee_initialize()
+        geemap.ee_initialize(project='gee-test-project-457214')
         return True
     except Exception as e:
         st.error(f"Error initializing Earth Engine: {str(e)}")
@@ -101,40 +106,45 @@ selected_months = st.sidebar.multiselect("Select Months",
                                         month_options, 
                                         default=default_months)
 
-# Function to get county boundary from Census API and convert to Earth Engine feature
 @st.cache_data
 def get_county_boundary(state_id, county_id):
-    # This API returns county boundaries as GeoJSON
-    tiger_url = f"https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1/query?where=STATE={state_id}+AND+COUNTY={county_id}&outFields=*&outSR=4326&f=geojson"
-    response = requests.get(tiger_url)
-    geojson = response.json()
-    
-    # Save GeoJSON to a temporary file
-    with tempfile.NamedTemporaryFile(suffix='.geojson', delete=False) as tmp:
-        tmp_path = tmp.name
-        tmp.write(bytes(str(geojson), 'utf-8'))
-    
-    # Read with GeoPandas and project to UTM
-    gdf = gpd.read_file(tmp_path)
-    
-    # Determine appropriate UTM zone based on county centroid longitude
-    lon = gdf.geometry.centroid.x.mean()
-    utm_zone = int(((lon + 180) / 6) % 60) + 1
-    
-    # Project to the appropriate UTM zone
-    epsg_code = 32600 + utm_zone  # North UTM zones
-    if gdf.geometry.centroid.y.mean() < 0:
-        epsg_code = 32700 + utm_zone  # South UTM zones
-    
-    gdf = gdf.to_crs(epsg=epsg_code)
-    
-    # Convert GeoDataFrame to ee.FeatureCollection
-    aoi = geemap.geopandas_to_ee(gdf)
-    
-    # Clean up temporary file
-    os.unlink(tmp_path)
-    
-    return aoi, gdf, epsg_code
+    state_id_padded = str(state_id).zfill(2)
+    county_id_padded = str(county_id).zfill(3)
+
+    st.write(f"📍 State ID (padded): `{state_id_padded}`")
+    st.write(f"📍 County ID (padded): `{county_id_padded}`")
+
+    # Download the Census cartographic county boundaries (1:5M)
+    url = "https://www2.census.gov/geo/tiger/GENZ2022/shp/cb_2022_us_county_5m.zip"
+    st.write("📦 Downloading static county boundary file from Census...")
+    response = requests.get(url)
+
+    with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            z.extractall(tmpdir)
+            shapefile = [f for f in os.listdir(tmpdir) if f.endswith('.shp')][0]
+            gdf = gpd.read_file(os.path.join(tmpdir, shapefile))
+
+            # Filter for the desired county
+            filtered = gdf[
+                (gdf["STATEFP"] == state_id_padded) & (gdf["COUNTYFP"] == county_id_padded)
+            ]
+
+            if filtered.empty:
+                raise ValueError(f"No matching county found for STATE={state_id_padded}, COUNTY={county_id_padded}")
+
+            # Reproject to UTM
+            lon = filtered.geometry.centroid.x.mean()
+            utm_zone = int(((lon + 180) / 6) % 60) + 1
+            epsg_code = 32600 + utm_zone
+            if filtered.geometry.centroid.y.mean() < 0:
+                epsg_code = 32700 + utm_zone
+
+            gdf_projected = filtered.to_crs(epsg=epsg_code)
+            aoi = geemap.geopandas_to_ee(gdf_projected)
+
+            st.success("✅ County boundary loaded from static source.")
+            return aoi, gdf_projected, epsg_code
 
 # Function to apply scale factors for Landsat 8
 def apply_scale_factors_landsat8(image):
@@ -497,13 +507,9 @@ def process_landsat_data(year, aoi, months):
 
 # Create a mapping function to fetch county centroid for display
 def map_county(aoi_gdf, epsg_code):
-    # Create a map centered on the county
-    center = aoi_gdf.to_crs(epsg=4326).centroid[0]
-    county_map = geemap.Map(center=[center.y, center.x], zoom=9)
-    
-    # Add the county boundary
+    center = aoi_gdf.to_crs(epsg=4326).centroid.iloc[0]
+    county_map = geemap_folium.Map(center=[center.y, center.x], zoom=9)
     county_map.add_gdf(aoi_gdf.to_crs(epsg=4326), layer_name="County Boundary")
-    
     return county_map
 
 # Function to visualize results
