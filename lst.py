@@ -37,7 +37,7 @@ areas and natural/vegetative surfaces over time.
 def initialize_ee():
     try:
         # This will use the EARTHENGINE_TOKEN from Streamlit secrets
-        geemap.ee_initialize(project='gee-test-project-457214')
+        geemap.ee_initialize(project='lstapp-457222')
         return True
     except Exception as e:
         st.error(f"Error initializing Earth Engine: {str(e)}")
