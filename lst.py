@@ -502,6 +502,14 @@ def process_landsat_data(year, aoi, months):
         'LST_p95': p95,
         'NLCD_Year': nlcd_year
     }
+        # Add raw EE Images for visualization
+    results["EE_Images"] = {
+        "LST": lst_filtered,
+        "NDVI": ndvi,
+        "NDMI": ndmi,
+        "NLCD": nlcd
+    }
+
     
     return results
 
@@ -511,6 +519,27 @@ def map_county(aoi_gdf, epsg_code):
     county_map = geemap_folium.Map(center=[center.y, center.x], zoom=9)
     county_map.add_gdf(aoi_gdf.to_crs(epsg=4326), layer_name="County Boundary")
     return county_map
+
+def add_map_layers(ee_images, aoi_geom, map_center):
+    """Adds selected layers to an interactive folium map."""
+    m = geemap_folium.Map(center=map_center, zoom=9)
+
+    # Clip layers to AOI
+    ndvi_vis = {'min': 0, 'max': 1, 'palette': ['blue', 'white', 'green']}
+    ndmi_vis = {'min': -1, 'max': 1, 'palette': ['brown', 'white', 'blue']}
+    lst_vis = {'min': 20, 'max': 45, 'palette': ['blue', 'green', 'yellow', 'red']}
+    nlcd_vis = {'min': 0, 'max': 95, 'palette': ['000000', '476ba1', 'd1def8', 'decaca', 'd99482',
+                                                 'ee0000', 'ab0000', 'b3ac9f', '68ab5f', '1c5f2c',
+                                                 'b5ca8f', 'a3cc51', '82ba9e', 'dcd93d', 'ab7028',
+                                                 'bad9eb', '70a3ba', 'bae5d6', '70a3ba', 'ffffff']}
+
+    # Add layers
+    m.addLayer(ee_images["LST"].clip(aoi_geom), lst_vis, "LST (°C)")
+    m.addLayer(ee_images["NDVI"].clip(aoi_geom), ndvi_vis, "NDVI")
+    m.addLayer(ee_images["NDMI"].clip(aoi_geom), ndmi_vis, "NDMI")
+    m.addLayer(ee_images["NLCD"].clip(aoi_geom), nlcd_vis, "NLCD Land Cover")
+
+    return m
 
 # Function to visualize results
 def plot_uhi_trend(results_df):
@@ -681,7 +710,8 @@ if st.sidebar.button("Run UHI Analysis"):
                 status_text.text("Analysis complete!")
                 
                 # Create tabs for different outputs
-                tab1, tab2, tab3, tab4, tab5 = st.tabs(["Results Table", "UHI Trend", "Temperature Comparison", "Vegetation Indices", "County Map"])
+                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Results Table", "UHI Trend", "Temperature Comparison", "Vegetation Indices", "County Map", "Interactive Map Layers"])
+
                 
                 # Display results table
                 with tab1:
@@ -854,6 +884,23 @@ if st.sidebar.button("Run UHI Analysis"):
                         
                         **Other** includes all remaining NLCD classes.
                         """)
+               with tab6:
+                    st.subheader("Interactive Map Layers")
+                
+                    # Get latest EE images from the last year processed
+                    latest_ee_images = results_df.iloc[-1]["EE_Images"]
+                
+                    # Get the AOI geometry and map center
+                    map_center = aoi_gdf.to_crs(epsg=4326).centroid.iloc[0]
+                    map_center_coords = [map_center.y, map_center.x]
+                
+                    # Render the layer map
+                    layer_map = add_map_layers(latest_ee_images, aoi.geometry(), map_center_coords)
+                    layer_map.to_streamlit(height=600)
+                
+                    st.caption("Use the layer control (top-right) to toggle NDVI, LST, NDMI, and NLCD overlays.")
+
+
         
         except Exception as e:
             st.error(f"Error during analysis: {str(e)}")
